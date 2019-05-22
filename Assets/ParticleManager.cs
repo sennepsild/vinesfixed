@@ -6,16 +6,19 @@ public class ParticleManager : MonoBehaviour
 {
 
 
-
+    public bool useCameras = false;
 
 
     float stemcount = 5;
 
-    
+    public int Particles = 30;
     public GameObject particleSystemPrefab;
 
     public GameObject Leaf;
 
+    public GameObject cameraPrefab;
+
+    List<GameObject> cameras = new List<GameObject>();
     
     List<Vector3> anchorPoints = new List<Vector3>();
     List<bool> pause = new List<bool>();
@@ -30,6 +33,9 @@ public class ParticleManager : MonoBehaviour
 
     Lsystem lsystem;
 
+    GameObject vineParent;
+
+
     public GameObject prefab;
     public GameObject VinePiece;
 
@@ -39,9 +45,12 @@ public class ParticleManager : MonoBehaviour
         lsystem = GetComponent<Lsystem>();
         
         AddBranch(transform.position,Vector3.up);
+
         
-        
-        
+
+
+
+        vineParent = new GameObject();
     }
     private void AddBranch( Vector3 position, Vector3 normal)
     {
@@ -54,7 +63,14 @@ public class ParticleManager : MonoBehaviour
         oldAnchorPoints.Add(position);
         add.Add(true);
         pause.Add(false);
-     
+        if (useCameras)
+        {
+            for (int i = 0; i < Particles; i++)
+            {
+                GameObject camTemp = Instantiate(cameraPrefab, transform.position, Quaternion.identity);
+                cameras.Add(camTemp);
+            }
+        }
     }
     
 
@@ -94,7 +110,7 @@ public class ParticleManager : MonoBehaviour
         float dist = Vector3.Distance(anchorPoints[pointId], localstep);
 
         int steps = Mathf.RoundToInt( dist / 0.4f);
-        print(steps);
+        //print(steps);
         for (int i = 0; i < steps; i++)
         {
             GameObject piece = Instantiate(VinePiece, localstep, Quaternion.identity);
@@ -124,7 +140,7 @@ public class ParticleManager : MonoBehaviour
 
 
             leaf.transform.SetParent(piece.transform);
-
+            piece.transform.SetParent(vineParent.transform);
 
             localstep = piece.GetComponent<stem>().end.position;
         }
@@ -174,8 +190,8 @@ public class ParticleManager : MonoBehaviour
 
     IEnumerator AddBranch(int pointId)
     {
-
-        psystems[pointId].Emit(30);
+       
+        psystems[pointId].Emit(Particles);
         yield return new WaitForSeconds(2);
         /*
         print(22);
@@ -189,10 +205,62 @@ public class ParticleManager : MonoBehaviour
         particleSys.SetParticles(Particles, numParticlesAlive);
 
     */
+        if (useCameras)
+            vineParent.SetActive(false);
+        print("Cameras engaged");
+
+
+
+
         List<Vector3> potentialPositions = psCollisions[pointId].potentialPositions;
-        List<Vector3> theNormals = psCollisions[pointId].theNormals; 
+        List<Vector3> theNormals = psCollisions[pointId].theNormals;
+
+        if (useCameras)
+        {
+            for (int i = 0; i < potentialPositions.Count; i++)
+            {
+
+                Vector3 check = cameras[(pointId * Particles) + i].transform.position;
+                cameras[(pointId * Particles) + i].transform.position = potentialPositions[i] + (theNormals[i] * 0.4f);
+                cameras[(pointId * Particles) + i].transform.LookAt(potentialPositions[i]);
+
+                if (cameras[(pointId * Particles) + i].transform.position != check)
+                {
+                    cameras[(pointId * Particles) + i].GetComponent<Camreader>().CalculateEntropyOnNextRender();
+                }
+
+            }
+        }
+
+        if (useCameras)
+            yield return new WaitForSeconds(0.3f);
+
+        vineParent.SetActive(true);
+
+        float[] entropyscores = new float[potentialPositions.Count];
+
+        if (useCameras)
+        {
+            for (int i = 0; i < entropyscores.Length; i++)
+            {
+                if (i < 29)
+                {
+                    if (cameras[(pointId * Particles) + i].GetComponent<Camreader>().entropySetToUpate)
+                    {
+                        entropyscores[i] = cameras[(pointId * Particles) + i].GetComponent<Camreader>().entropy;
+                    }
+                    else
+                        entropyscores[i] = float.MinValue;
+                }
+                else
+                    entropyscores[i] = float.MinValue;
+            }
+        }
+
 
         float[] scores= new float[potentialPositions.Count];
+
+
         for (int i = 0; i < potentialPositions.Count; i++)
         {
             float score = 0;
@@ -200,6 +268,7 @@ public class ParticleManager : MonoBehaviour
 
             float dist = Vector3.Distance(potentialPositions[i], oldAnchorPoints[pointId]);
             score *= dist;
+            score += entropyscores[i];
             if (dist > 2)
             {
                 score = float.MinValue;
@@ -229,7 +298,7 @@ public class ParticleManager : MonoBehaviour
             }
         }
 
-        print(highScores[0]+","+ highScores[1] + ","+ highScores[2]);
+        //print(highScores[0]+","+ highScores[1] + ","+ highScores[2]);
 
         int chosenInt = Mathf.RoundToInt(Random.Range(0, 2));
         anchorPoints[pointId] = potentialPositions[scoreNumber[chosenInt]];
